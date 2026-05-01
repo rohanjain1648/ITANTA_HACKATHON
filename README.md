@@ -6,7 +6,7 @@ colorTo: purple
 sdk: docker
 pinned: false
 license: mit
-short_description: Autonomous multi-agent system that turns ideas into production-ready code
+short_description: Turn plain English ideas into production-ready code
 ---
 
 <div align="center">
