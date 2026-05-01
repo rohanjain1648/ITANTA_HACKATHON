@@ -1,4 +1,7 @@
 # ForgeAI - Agentic AI Project Framework
+# Web UI (Hugging Face Spaces)
+gradio>=4.0.0
+
 # Core
 google-generativeai>=0.8.0
 pydantic>=2.0.0
