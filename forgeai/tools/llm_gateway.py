@@ -2,6 +2,8 @@
 
 Supports Google Gemini (primary), with extensible design for OpenAI/Anthropic.
 Handles rate limiting, retries, token counting, and request/response logging.
+
+Uses the google-genai SDK (google.genai) — the successor to google-generativeai.
 """
 
 import json
@@ -9,7 +11,8 @@ import time
 import traceback
 from typing import Optional
 
-import google.generativeai as genai
+from google import genai
+from google.genai import types as genai_types
 
 from forgeai.core.activity_logger import ActivityLogger
 
@@ -32,8 +35,7 @@ class LLMGateway:
 
         # Initialize provider
         if provider == "google":
-            genai.configure(api_key=api_key)
-            self._gemini_model = genai.GenerativeModel(model)
+            self._client = genai.Client(api_key=api_key)
         else:
             raise ValueError(f"Unsupported LLM provider: {provider}")
 
@@ -92,24 +94,17 @@ class LLMGateway:
             raise ValueError(f"Unsupported provider: {self.provider}")
 
     def _call_gemini(self, prompt: str, system_instruction: str, temperature: float) -> str:
-        """Call Google Gemini API."""
-        generation_config = genai.types.GenerationConfig(
+        """Call Google Gemini API using the google-genai SDK."""
+        config = genai_types.GenerateContentConfig(
             temperature=temperature,
             max_output_tokens=self.max_tokens,
+            system_instruction=system_instruction if system_instruction else None,
         )
 
-        # If there's a system instruction, create a model with it
-        if system_instruction:
-            model = genai.GenerativeModel(
-                self.model,
-                system_instruction=system_instruction,
-            )
-        else:
-            model = self._gemini_model
-
-        response = model.generate_content(
-            prompt,
-            generation_config=generation_config,
+        response = self._client.models.generate_content(
+            model=self.model,
+            contents=prompt,
+            config=config,
         )
         return response.text
 
