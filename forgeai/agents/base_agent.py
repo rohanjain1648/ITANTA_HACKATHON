@@ -4,6 +4,7 @@ Every agent follows the same contract: receive context, execute via LLM,
 validate output, return structured result.
 """
 
+import json
 import time
 from abc import ABC, abstractmethod
 from typing import Optional
@@ -87,6 +88,36 @@ class BaseAgent(ABC):
                 error=str(e),
                 duration_seconds=duration,
             )
+
+    @staticmethod
+    def _parse_json_safe(raw: str) -> Optional[dict]:
+        """Robustly extract a JSON object from an LLM response.
+
+        Handles markdown code fences (```json ... ```) and leading/trailing text.
+        Returns None if no valid JSON object can be extracted.
+        """
+        text = raw.strip()
+        # Strip markdown fences
+        if text.startswith("```"):
+            lines = text.split("\n")
+            text = "\n".join(lines[1:])
+            if text.rstrip().endswith("```"):
+                text = "\n".join(text.rstrip().split("\n")[:-1])
+            text = text.strip()
+        # Direct parse
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError:
+            pass
+        # Find outermost { ... } and parse that slice
+        start = text.find("{")
+        end = text.rfind("}") + 1
+        if start != -1 and end > start:
+            try:
+                return json.loads(text[start:end])
+            except json.JSONDecodeError:
+                pass
+        return None
 
     def execute_json(self, context: AgentContext) -> AgentResult:
         """Execute the agent expecting a JSON response from the LLM."""

@@ -4,7 +4,6 @@ Runs the generated project's test suite and returns structured results
 for the orchestrator to act on (FR-12).
 """
 
-import json
 import os
 import subprocess
 import sys
@@ -96,6 +95,78 @@ class TestRunner:
                     f"Tests {status}: {result.passed} passed, {result.failed} failed, "
                     f"{result.errors} errors, {result.skipped} skipped",
                     result.to_dict()
+                )
+
+        except subprocess.TimeoutExpired:
+            result.success = False
+            result.error_output = f"Tests timed out after {self._timeout}s"
+            if self._logger:
+                self._logger.error("TestRunner", result.error_output)
+
+        except FileNotFoundError:
+            result.success = False
+            result.error_output = "pytest not found. Ensure it is installed."
+            if self._logger:
+                self._logger.error("TestRunner", result.error_output)
+
+        return result
+
+    def run_tests_for_files(self, test_files: list[str]) -> TestResult:
+        """Run only the specified test files (used for per-task TDD execution).
+
+        Avoids running tests for future tasks whose production code doesn't
+        exist yet — which would cause false import-error failures.
+        """
+        result = TestResult()
+
+        if not test_files:
+            result.success = True
+            result.output = "No test files specified — treating as passed."
+            return result
+
+        # Resolve full paths; skip any that don't exist on disk yet
+        resolved: list[str] = []
+        for f in test_files:
+            full = self._project_dir / f
+            if full.exists():
+                resolved.append(str(full))
+
+        if not resolved:
+            result.success = False
+            result.error_output = f"Test files not found on disk: {test_files}"
+            if self._logger:
+                self._logger.error("TestRunner", result.error_output)
+            return result
+
+        cmd = [sys.executable, "-m", "pytest", "-v", "--tb=short", "--no-header"] + resolved
+
+        if self._logger:
+            self._logger.test_run("TestRunner", f"Running task tests: {' '.join(cmd)}")
+
+        try:
+            proc = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=self._timeout,
+                cwd=str(self._project_dir),
+                env={**os.environ, "PYTHONPATH": str(self._project_dir)},
+            )
+
+            result.output = proc.stdout
+            result.error_output = proc.stderr
+            # exit code 5 = no tests collected (empty file is OK); 0 = all passed
+            result.success = proc.returncode in (0, 5)
+
+            self._parse_results(result, proc.stdout)
+
+            if self._logger:
+                status = "PASSED" if result.success else "FAILED"
+                self._logger.test_run(
+                    "TestRunner",
+                    f"Task tests {status}: {result.passed} passed, "
+                    f"{result.failed} failed, {result.errors} errors",
+                    result.to_dict(),
                 )
 
         except subprocess.TimeoutExpired:

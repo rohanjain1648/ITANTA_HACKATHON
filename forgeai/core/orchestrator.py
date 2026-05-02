@@ -20,7 +20,7 @@ from forgeai.agents.recovery_agent import RecoveryAgent
 from forgeai.agents.security_agent import SecurityAgent
 from forgeai.config.config_manager import ConfigManager
 from forgeai.core.activity_logger import ActivityLogger
-from forgeai.models.agent_state import AgentContext, AgentResult, AgentRole
+from forgeai.models.agent_state import AgentContext, AgentRole
 from forgeai.models.specification import StructuredSpecification
 from forgeai.models.task import AtomicTask, ImplementationPlan, TaskStatus
 from forgeai.models.workflow_state import WorkflowPhase, WorkflowState
@@ -77,17 +77,20 @@ class Orchestrator:
         self._on_question: Optional[Callable] = None
         self._on_task_progress: Optional[Callable] = None
         self._on_diff_review: Optional[Callable] = None
+        self._on_plan_ready: Optional[Callable] = None
 
     # ── UI Hooks ──────────────────────────────────────────────────────────
 
     def set_callbacks(self, on_phase_change=None, on_checkpoint=None,
-                      on_question=None, on_task_progress=None, on_diff_review=None):
+                      on_question=None, on_task_progress=None, on_diff_review=None,
+                      on_plan_ready=None):
         """Register UI callbacks for interactive events."""
         self._on_phase_change = on_phase_change
         self._on_checkpoint = on_checkpoint
         self._on_question = on_question
         self._on_task_progress = on_task_progress
         self._on_diff_review = on_diff_review
+        self._on_plan_ready = on_plan_ready
 
     def _notify_phase(self, phase: WorkflowPhase):
         """Transition to a new phase and notify UI."""
@@ -140,9 +143,13 @@ class Orchestrator:
             # Phase 5: Execution (TDD loop)
             self._phase_execution(spec, architecture, plan)
 
-            # Phase 6: Security Audit (Extended)
+            # Phase 6a: Security Audit (Extended)
             if self.config.security_audit.enabled:
                 self._phase_security_audit(spec)
+
+            # Phase 6b: Docker artifact generation (Extended)
+            if self.config.docker.enabled:
+                self._phase_docker()
 
             # Phase 7: Summary
             return self._finalize("Pipeline completed successfully")
@@ -267,6 +274,10 @@ class Orchestrator:
         """Phase 4: Human checkpoint — review and approve plan."""
         self._notify_phase(WorkflowPhase.PLAN_REVIEW)
 
+        # Notify UI with the full plan so it can be displayed
+        if self._on_plan_ready:
+            self._on_plan_ready(plan)
+
         if self.config.workflow.auto_approve_checkpoints:
             self.logger.info("Orchestrator", "Auto-approving plan (config)")
             return True
@@ -290,6 +301,12 @@ class Orchestrator:
             if not task:
                 self.logger.info("Orchestrator", "All tasks completed or no more pending tasks")
                 break
+
+            # Re-enter EXECUTION before each task so the FSM is in a valid
+            # state for the TASK_QA transition (previous task leaves it at
+            # TASK_TEST or TASK_RECOVERY).
+            if self.state.phase != WorkflowPhase.EXECUTION:
+                self.state.phase = WorkflowPhase.EXECUTION  # Force-reset without validation
 
             self.logger.info("Orchestrator",
                              f"Starting task #{task.id}: {task.title}")
@@ -390,9 +407,9 @@ class Orchestrator:
             task.status = TaskStatus.CODE_GENERATED
             task.generated_code = coder_result.generated_files
 
-            # ── Step 3: Run tests ──
+            # ── Step 3: Run only this task's test files (TDD per-task) ──
             self._notify_phase(WorkflowPhase.TASK_TEST)
-            test_result = self.test_runner.run_tests()
+            test_result = self.test_runner.run_tests_for_files(task.test_files)
 
             if test_result.success:
                 self.state.tests_passed += test_result.passed
@@ -440,10 +457,24 @@ class Orchestrator:
                                              f"Recovery: Escalating task #{task.id}")
                             return False
 
-                        # Apply modified tests if provided
+                        # ── Inject fix_instructions into error_log so the next
+                        #    coder attempt reads them as its primary guidance ──
+                        fix = recovery_result.architecture.get("fix_instructions", "")
+                        diag = recovery_result.architecture.get("diagnosis", {})
+                        if fix:
+                            task.error_log.append(
+                                f"[RECOVERY FIX — attempt {attempt + 1}]\n"
+                                f"Root cause: {diag.get('root_cause', 'unknown')}\n"
+                                f"Error location: {diag.get('error_in', 'unknown')}\n"
+                                f"Fix instructions: {fix}"
+                            )
+
+                        # Apply modified test files if recovery rewrote them
                         if recovery_result.generated_files:
                             for fp, content in recovery_result.generated_files.items():
                                 self.file_manager.write_file(fp, content)
+                                if fp not in task.test_files:
+                                    task.test_files.append(fp)
 
                     time.sleep(self.config.workflow.retry_delay_seconds)
 
@@ -453,7 +484,7 @@ class Orchestrator:
         return False
 
     def _phase_security_audit(self, spec: StructuredSpecification):
-        """Phase 6: Security audit on all generated code."""
+        """Phase 6a: Security audit on all generated code."""
         self._notify_phase(WorkflowPhase.SECURITY_AUDIT)
 
         all_files = self.file_manager.get_all_source_files()
@@ -467,7 +498,29 @@ class Orchestrator:
 
         if result.success and result.security_report:
             self._save_artifact("security_report.json", result.security_report)
-            self.logger.info("Orchestrator", f"Security audit: {result.message}")
+            report = result.security_report
+            summary = report.get("summary", {})
+            findings = report.get("findings", [])
+            self.logger.info(
+                "Orchestrator",
+                f"Security audit complete: {summary.get('total_findings', 0)} findings | "
+                f"Risk: {summary.get('overall_risk', 'UNKNOWN')} | "
+                f"Critical: {summary.get('critical', 0)}, "
+                f"High: {summary.get('high', 0)}, "
+                f"Medium: {summary.get('medium', 0)}",
+            )
+            for f in findings[:5]:
+                self.logger.warn(
+                    "SecurityAudit",
+                    f"[{f.get('severity','?')}] {f.get('file','?')} — {f.get('description','?')}",
+                )
+
+    def _phase_docker(self):
+        """Phase 6b: Generate Docker artifacts for the output project."""
+        from forgeai.tools.docker_builder import DockerBuilder
+        self.logger.info("Orchestrator", "Generating Docker artifacts…")
+        builder = DockerBuilder(self.config.output.project_dir, self.logger)
+        builder.generate_docker_files(self.config.docker.base_image)
 
     # ── Helpers ────────────────────────────────────────────────────────────
 

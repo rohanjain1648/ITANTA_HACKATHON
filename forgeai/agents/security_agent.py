@@ -3,7 +3,6 @@
 Satisfies FR-14 [EXTENDED]: AI-powered security audit flagging vulnerabilities.
 """
 
-import json
 from typing import Optional
 
 from forgeai.agents.base_agent import BaseAgent
@@ -71,22 +70,15 @@ class SecurityAgent(BaseAgent):
             f"IMPORTANT: Respond ONLY with valid JSON."
         )
 
-    def parse_response(self, raw_response: str, context: AgentContext) -> AgentResult:
-        try:
-            data = json.loads(raw_response)
-        except json.JSONDecodeError:
-            import re
-            json_match = re.search(r'\{.*\}', raw_response, re.DOTALL)
-            if json_match:
-                data = json.loads(json_match.group())
-            else:
-                return AgentResult(
-                    success=False, role=self.role,
-                    error="Failed to parse security audit response",
-                )
+    def parse_response(self, raw_response: str, _context: AgentContext) -> AgentResult:
+        data = self._parse_json_safe(raw_response)
+        if data is None:
+            return AgentResult(
+                success=False, role=self.role,
+                error="Failed to parse security audit response",
+            )
 
         summary = data.get("summary", {})
-        findings = data.get("findings", [])
 
         return AgentResult(
             success=True,

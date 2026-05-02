@@ -79,16 +79,10 @@ class PlannerAgent(BaseAgent):
         return "8-12"
 
     def parse_response(self, raw_response: str, context: AgentContext) -> AgentResult:
-        try:
-            data = json.loads(raw_response)
-        except json.JSONDecodeError:
-            import re
-            json_match = re.search(r'\{.*\}', raw_response, re.DOTALL)
-            if json_match:
-                data = json.loads(json_match.group())
-            else:
-                return AgentResult(success=False, role=self.role,
-                                   error="Failed to parse plan as JSON")
+        data = self._parse_json_safe(raw_response)
+        if data is None:
+            return AgentResult(success=False, role=self.role,
+                               error="Failed to parse plan as JSON")
 
         tasks = []
         for t in data.get("tasks", []):

@@ -1,5 +1,5 @@
 # ForgeAI — Detailed Design Notes
-## Phase 1 Design Document | Itlanta Hackathon 2026
+## Phase 1 Design Document | Itanta Hackathon 2026
 
 ---
 
@@ -809,4 +809,4 @@ Tier 5 requires implementing inner, left, right, and full outer joins on MongoDB
 ---
 
 *Document last updated: April 10, 2026*
-*ForgeAI — Itlanta Hackathon 2026 | Phase 1 Design Submission*
+*ForgeAI — Itanta Hackathon 2026 | Phase 1 Design Submission*

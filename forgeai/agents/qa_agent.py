@@ -16,86 +16,98 @@ from forgeai.tools.llm_gateway import LLMGateway
 
 
 class QAAgent(BaseAgent):
-    """Writes comprehensive failing test cases for each task BEFORE production code."""
+    """Writes focused, realistic failing test cases for each task BEFORE production code."""
 
     def __init__(self, llm: LLMGateway, logger: Optional[ActivityLogger] = None):
         super().__init__(AgentRole.QA, llm, logger)
 
     def build_system_prompt(self) -> str:
         return (
-            "You are an expert QA Engineer AI following strict Test-Driven Development (TDD).\n\n"
-            "Your ONLY job is to write FAILING test cases that define the expected behavior "
-            "BEFORE any production code exists. This is non-negotiable.\n\n"
-            "Rules:\n"
-            "1. Use pytest as the testing framework\n"
-            "2. Write tests that are currently EXPECTED TO FAIL (the code doesn't exist yet)\n"
-            "3. Cover: happy path, edge cases, error conditions, boundary values\n"
-            "4. Use descriptive test names: test_<what>_<condition>_<expected>\n"
-            "5. Include proper imports (even if modules don't exist yet)\n"
-            "6. Use fixtures in conftest.py for shared setup\n"
-            "7. Test API endpoints with TestClient (FastAPI) if applicable\n"
-            "8. Test data validation with valid and invalid inputs\n"
-            "9. Each test should test ONE thing\n"
-            "10. Include docstrings explaining what each test verifies\n\n"
-            "Output format: Python test files that can be saved directly to disk."
+            "You are an expert QA Engineer following strict Test-Driven Development (TDD).\n\n"
+            "CRITICAL RULES:\n"
+            "1. Write tests ONLY for the current task's target files — do NOT import from files\n"
+            "   that belong to future tasks.\n"
+            "2. Use pytest as the testing framework.\n"
+            "3. Tests must be syntactically valid Python.\n"
+            "4. Keep tests SIMPLE and FOCUSED — test one behaviour per test function.\n"
+            "5. Use pydantic v2 patterns (BaseModel, model_validate, not v1 validators).\n"
+            "6. For FastAPI endpoints use httpx.AsyncClient with ASGITransport, or\n"
+            "   fastapi.testclient.TestClient (sync) — prefer TestClient for simplicity.\n"
+            "7. Mock external services (databases, emails, third-party APIs) with pytest.monkeypatch\n"
+            "   or unittest.mock.patch rather than calling them for real.\n"
+            "8. If testing a file that doesn't exist yet, import it anyway — the test will fail\n"
+            "   with ImportError until the coder creates it (this is correct TDD behaviour).\n"
+            "9. NEVER import from modules of future tasks (tasks with higher id).\n"
+            "10. Generate a conftest.py only if shared fixtures are genuinely needed.\n\n"
+            "AVAILABLE PACKAGES (always installed — safe to import):\n"
+            "  fastapi, uvicorn, pydantic (v2), sqlalchemy, aiosqlite,\n"
+            "  httpx, pytest, pytest-asyncio, python-dotenv, aiofiles,\n"
+            "  passlib, python-jose, python-multipart\n\n"
+            "OUTPUT: A JSON object with test_files dict only."
         )
 
     def build_user_prompt(self, context: AgentContext) -> str:
         spec = context.specification
         spec_text = spec.to_prompt_context() if spec else ""
-        arch_text = json.dumps(context.architecture, indent=2) if context.architecture else ""
         task = context.current_task
 
-        # Include existing project files for import resolution
-        existing = ""
-        if context.existing_files:
-            existing = "\n## Existing Project Files:\n"
-            for fname, content in context.existing_files.items():
-                existing += f"\n### {fname}\n```python\n{content}\n```\n"
-
         task_info = ""
+        target_files_str = ""
         if task:
+            target_files_str = ", ".join(task.target_files)
             task_info = (
                 f"\n## Current Task (#{task.id}): {task.title}\n"
                 f"Description: {task.description}\n"
-                f"Target files: {', '.join(task.target_files)}\n"
+                f"Target files (the files the CODER will create): {target_files_str}\n"
             )
 
+        # Show only previously written files (not future task files)
+        existing = ""
+        if context.existing_files:
+            existing = "\n## Already-existing project files:\n"
+            for fname, content in context.existing_files.items():
+                existing += f"\n### {fname}\n```python\n{content[:800]}\n```\n"
+
         return (
-            f"Write FAILING test cases for the following task. These tests define "
-            f"the expected behavior — production code will be written AFTER to make them pass.\n\n"
-            f"## Project Specification\n{spec_text}\n\n"
-            f"## Architecture\n{arch_text}\n"
+            f"Write FAILING pytest tests for the following task.\n"
+            f"These tests must import ONLY from the task's target files "
+            f"({target_files_str}) and standard/installed packages.\n\n"
+            f"## Project Specification\n{spec_text}\n"
             f"{task_info}\n"
             f"{existing}\n"
-            f"Respond with a JSON object:\n"
+            f"Respond with ONLY this JSON object (no markdown, no explanation):\n"
             f'{{\n'
             f'  "test_files": {{\n'
-            f'    "tests/test_example.py": "import pytest\\n\\ndef test_example():\\n    ...",\n'
-            f'    "tests/conftest.py": "import pytest\\n\\n@pytest.fixture\\ndef ..."\n'
+            f'    "tests/test_{self._task_slug(task)}.py": "import pytest\\n\\n# test code here",\n'
+            f'    "tests/conftest.py": "# only if shared fixtures are needed"\n'
             f'  }},\n'
-            f'  "test_count": 5,\n'
+            f'  "test_count": 4,\n'
             f'  "coverage_areas": ["happy path", "validation", "error handling"]\n'
             f'}}\n\n'
-            f"IMPORTANT: Respond ONLY with valid JSON. The test code must be syntactically valid Python. "
-            f"Tests SHOULD FAIL because the production code doesn't exist yet."
+            f"IMPORTANT: The test file must be syntactically valid Python. "
+            f"Tests WILL fail at first because the target files don't exist — that is correct."
         )
 
-    def parse_response(self, raw_response: str, context: AgentContext) -> AgentResult:
-        try:
-            data = json.loads(raw_response)
-        except json.JSONDecodeError:
-            import re
-            json_match = re.search(r'\{.*\}', raw_response, re.DOTALL)
-            if json_match:
-                data = json.loads(json_match.group())
-            else:
-                return AgentResult(
-                    success=False, role=self.role,
-                    error="Failed to parse QA response as JSON",
-                )
+    def _task_slug(self, task) -> str:
+        if not task:
+            return "module"
+        return task.title.lower().replace(" ", "_").replace("-", "_")[:30]
+
+    def parse_response(self, raw_response: str, _context: AgentContext) -> AgentResult:
+        data = self._parse_json_safe(raw_response)
+        if data is None:
+            return AgentResult(
+                success=False, role=self.role,
+                error="Failed to parse QA response as JSON",
+            )
 
         test_files = data.get("test_files", {})
+        # Remove conftest if it's empty / placeholder
+        test_files = {
+            k: v for k, v in test_files.items()
+            if v.strip() and "# only if" not in v
+        }
+
         if not test_files:
             return AgentResult(
                 success=False, role=self.role,
@@ -106,6 +118,33 @@ class QAAgent(BaseAgent):
             success=True,
             role=self.role,
             generated_files=test_files,
-            message=f"Generated {data.get('test_count', len(test_files))} tests "
-                    f"covering: {', '.join(data.get('coverage_areas', []))}",
+            message=(
+                f"Generated {data.get('test_count', len(test_files))} tests "
+                f"covering: {', '.join(data.get('coverage_areas', []))}"
+            ),
         )
+
+    @staticmethod
+    def _parse_json_safe(raw: str) -> Optional[dict]:
+        """Robust JSON extraction that handles markdown fences and leading text."""
+        text = raw.strip()
+        # Strip markdown fences
+        if text.startswith("```"):
+            lines = text.split("\n")
+            text = "\n".join(lines[1:])
+            if text.rstrip().endswith("```"):
+                text = "\n".join(text.rstrip().split("\n")[:-1])
+            text = text.strip()
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError:
+            pass
+        # Find outermost { ... }
+        start = text.find("{")
+        end = text.rfind("}") + 1
+        if start != -1 and end > start:
+            try:
+                return json.loads(text[start:end])
+            except json.JSONDecodeError:
+                pass
+        return None

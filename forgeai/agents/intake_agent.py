@@ -4,7 +4,6 @@ Satisfies FR-01: Accept natural-language spec + identify underspecified aspects.
 Satisfies FR-02: Produce structured specification with acceptance criteria.
 """
 
-import json
 from typing import Optional
 
 from forgeai.agents.base_agent import BaseAgent
@@ -90,20 +89,13 @@ class IntakeAgent(BaseAgent):
         )
 
     def parse_response(self, raw_response: str, context: AgentContext) -> AgentResult:
-        try:
-            data = json.loads(raw_response)
-        except json.JSONDecodeError:
-            # Try to extract JSON from response
-            import re
-            json_match = re.search(r'\{.*\}', raw_response, re.DOTALL)
-            if json_match:
-                data = json.loads(json_match.group())
-            else:
-                return AgentResult(
-                    success=False,
-                    role=self.role,
-                    error="Failed to parse LLM response as JSON",
-                )
+        data = self._parse_json_safe(raw_response)
+        if data is None:
+            return AgentResult(
+                success=False,
+                role=self.role,
+                error="Failed to parse LLM response as JSON",
+            )
 
         if "clarifying_questions" in data and not context.clarification_responses:
             # Phase 1: Return questions for user

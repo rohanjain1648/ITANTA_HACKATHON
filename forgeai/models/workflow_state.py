@@ -40,9 +40,11 @@ VALID_TRANSITIONS: dict[WorkflowPhase, list[WorkflowPhase]] = {
     WorkflowPhase.PLANNING: [WorkflowPhase.PLAN_REVIEW],
     WorkflowPhase.PLAN_REVIEW: [WorkflowPhase.EXECUTION, WorkflowPhase.PLANNING],
     WorkflowPhase.EXECUTION: [WorkflowPhase.TASK_QA, WorkflowPhase.SECURITY_AUDIT, WorkflowPhase.SUMMARY],
-    WorkflowPhase.TASK_QA: [WorkflowPhase.TASK_CODE, WorkflowPhase.TASK_RECOVERY],
-    WorkflowPhase.TASK_CODE: [WorkflowPhase.TASK_TEST, WorkflowPhase.TASK_RECOVERY],
-    WorkflowPhase.TASK_TEST: [WorkflowPhase.EXECUTION, WorkflowPhase.TASK_RECOVERY],
+    WorkflowPhase.TASK_QA: [WorkflowPhase.TASK_CODE, WorkflowPhase.TASK_RECOVERY, WorkflowPhase.EXECUTION],
+    # TASK_CODE → TASK_CODE allows coder retries when the agent itself fails
+    WorkflowPhase.TASK_CODE: [WorkflowPhase.TASK_TEST, WorkflowPhase.TASK_RECOVERY, WorkflowPhase.TASK_CODE, WorkflowPhase.EXECUTION],
+    # TASK_TEST → TASK_QA allows moving directly to the next task's QA step
+    WorkflowPhase.TASK_TEST: [WorkflowPhase.EXECUTION, WorkflowPhase.TASK_RECOVERY, WorkflowPhase.TASK_QA],
     WorkflowPhase.TASK_RECOVERY: [WorkflowPhase.TASK_QA, WorkflowPhase.TASK_CODE, WorkflowPhase.EXECUTION, WorkflowPhase.ERROR],
     WorkflowPhase.SECURITY_AUDIT: [WorkflowPhase.SUMMARY],
     WorkflowPhase.SUMMARY: [WorkflowPhase.DONE],

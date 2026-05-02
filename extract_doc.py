@@ -1,7 +1,7 @@
 from docx import Document
 import os
 
-doc_path = r'd:\downloads\itlanta\69c0040b4a492_hackathon_problem_statement_v2_copy_20260323_150834 (3).docx'
+doc_path = r'd:\downloads\itanta\69c0040b4a492_hackathon_problem_statement_v2_copy_20260323_150834 (3).docx'
 doc = Document(doc_path)
 
 print("=" * 80)
