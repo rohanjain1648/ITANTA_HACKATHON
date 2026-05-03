@@ -4,10 +4,9 @@
 # All guardrails, retry limits, and checkpoint triggers are configurable
 # via this single file without code changes. (NFR-03)
 # ============================================================================
-
 llm:
   provider: "google"               # google | openai | anthropic
-  model: "gemini-2.5-flash-lite"
+  model: "gemini-2.5-flash"
   temperature: 0.2
   max_tokens: 8192
   api_key_env: "GOOGLE_API_KEY"    # Environment variable name for API key

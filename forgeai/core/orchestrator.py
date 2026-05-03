@@ -328,6 +328,11 @@ class Orchestrator:
             if self._on_task_progress:
                 self._on_task_progress(task, plan.get_progress())
 
+        # After all tasks finish, reset to EXECUTION so the FSM can proceed
+        # to SECURITY_AUDIT or SUMMARY (both require EXECUTION as the source).
+        if self.state.phase != WorkflowPhase.EXECUTION:
+            self.state.phase = WorkflowPhase.EXECUTION
+
     def _execute_single_task(self, spec: StructuredSpecification,
                              architecture: dict, task: AtomicTask) -> bool:
         """Execute a single task using the TDD workflow: QA → Coder → Test → [Recovery]."""
@@ -529,7 +534,12 @@ class Orchestrator:
         self.state.completed_at = datetime.now()
 
         if self.state.phase != WorkflowPhase.ERROR:
-            self._notify_phase(WorkflowPhase.SUMMARY)
+            if not self.state.transition_to(WorkflowPhase.SUMMARY):
+                # Pipeline terminated early from a phase that has no direct
+                # SUMMARY transition — force the state so the summary is clean.
+                self.state.phase = WorkflowPhase.SUMMARY
+                if self._on_phase_change:
+                    self._on_phase_change(WorkflowPhase.SUMMARY)
 
         # Update stats from LLM gateway
         llm_stats = self.llm.get_stats()

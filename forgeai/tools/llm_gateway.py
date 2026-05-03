@@ -8,7 +8,6 @@ Uses the google-genai SDK (google.genai) — the successor to google-generativea
 
 import json
 import time
-import traceback
 from typing import Optional
 
 from google import genai
@@ -81,7 +80,13 @@ class LLMGateway:
                     self.logger.error("LLMGateway", error_msg)
 
                 if attempt < max_retries - 1:
-                    wait = 2 ** (attempt + 1)  # Exponential backoff
+                    err_str = str(e)
+                    is_rate_limit = "429" in err_str or "RESOURCE_EXHAUSTED" in err_str
+                    if is_rate_limit:
+                        suggested = self._parse_retry_delay(e)
+                        wait = max(suggested, 2 ** (attempt + 1))
+                    else:
+                        wait = 2 ** (attempt + 1)
                     time.sleep(wait)
                 else:
                     raise RuntimeError(f"LLM API failed after {max_retries} attempts: {str(e)}")
