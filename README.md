@@ -47,22 +47,23 @@ Built for the **Itanta Hackathon 2026** | Powered by **Google Gemini 2.5 Flash**
 4. [Features](#4-features)
 5. [User Journey](#5-user-journey)
 6. [System Architecture](#6-system-architecture)
-7. [Workflow — The 16-State FSM](#7-workflow--the-16-state-fsm)
-8. [Tech Stack](#8-tech-stack)
-9. [AI Deep Dive — Gemini 2.5 Flash](#9-ai-deep-dive--gemini-25-flash)
-10. [Impact](#10-impact)
-11. [Real-World Use Cases](#11-real-world-use-cases)
-12. [Comparison](#12-comparison)
-13. [Scalability](#13-scalability)
-14. [Responsible AI and Ethics](#14-responsible-ai-and-ethics)
-15. [Evaluation Criteria Alignment](#15-evaluation-criteria-alignment)
-16. [Trade-offs](#16-trade-offs)
-17. [Project Complexity Tiers](#17-project-complexity-tiers)
-18. [Installation & Setup](#18-installation--setup)
-19. [Why This Will Win](#19-why-this-will-win)
-20. [Future Scope](#20-future-scope)
-21. [FAQ](#21-faq)
-22. [Lessons Learned](#22-lessons-learned)
+7. [Workflow & Orchestration](#7-workflow--orchestration)
+8. [Data Flow & State Management](#8-data-flow--state-management)
+9. [Tech Stack](#9-tech-stack)
+10. [AI Deep Dive — Gemini 2.5 Flash](#10-ai-deep-dive--gemini-25-flash)
+11. [Impact](#11-impact)
+12. [Real-World Use Cases](#12-real-world-use-cases)
+13. [Comparison](#13-comparison)
+14. [Scalability](#14-scalability)
+15. [Responsible AI and Ethics](#15-responsible-ai-and-ethics)
+16. [Evaluation Criteria Alignment](#16-evaluation-criteria-alignment)
+17. [Trade-offs](#17-trade-offs)
+18. [Project Complexity Tiers](#18-project-complexity-tiers)
+19. [Installation & Setup](#19-installation--setup)
+20. [Why This Will Win](#20-why-this-will-win)
+21. [Future Scope](#21-future-scope)
+22. [FAQ](#22-faq)
+23. [Lessons Learned](#23-lessons-learned)
 
 ---
 
@@ -201,22 +202,69 @@ Watch as ForgeAI writes tests, implements code, and self-heals in real-time unti
 
 ## 6. System Architecture
 
-ForgeAI is built as a collaborative multi-agent ecosystem, where a central **Orchestrator** manages the flow between specialized units.
+ForgeAI is built as a collaborative multi-agent ecosystem, where a central **Orchestrator** manages the flow between specialized units. The entire system is built around a centralized **Global Project State**, ensuring that every agent has access to the most up-to-date context, decisions, and codebase.
 
-### The 7-Agent Core
-1.  **Intake Agent**: Transforms raw NL into a machine-readable `StructuredSpecification`.
-2.  **Architect Agent**: Designs the filesystem layout, database schemas, and API contracts.
-3.  **Planner Agent**: Decomposes the project into atomic `AtomicTask` objects with dependency tracking.
-4.  **QA Agent**: Generates a comprehensive `pytest` suite for each task *before* coding starts.
-5.  **Coder Agent**: Implements the production code designed to pass the QA Agent's tests.
-6.  **Recovery Agent**: The "Self-Healer"—diagnoses failures and provides corrective guidance.
-7.  **Security Agent**: Conducts a full audit of the generated code for security vulnerabilities.
+### High-Level Architecture Diagram
+
+```mermaid
+graph TD
+    User([User Input]) --> Orchestrator
+    Orchestrator --> State[Global Project State]
+    
+    subgraph Multi-Agent System
+        Intake[Intake Agent]
+        Architect[Architect Agent]
+        Planner[Planner Agent]
+        QA[QA Agent]
+        Coder[Coder Agent]
+        Recovery[Recovery Agent]
+        Security[Security Agent]
+    end
+    
+    Orchestrator <--> Intake
+    Orchestrator <--> Architect
+    Orchestrator <--> Planner
+    Orchestrator <--> QA
+    Orchestrator <--> Coder
+    Orchestrator <--> Recovery
+    Orchestrator <--> Security
+    
+    Intake -.-> State
+    Architect -.-> State
+    Planner -.-> State
+    QA -.-> State
+    Coder -.-> State
+    Recovery -.-> State
+    Security -.-> State
+
+    subgraph File System [Sandboxed File System]
+        CodeFiles[Code Files]
+        TestFiles[Test Files]
+        Logs[Execution Logs]
+    end
+    
+    Coder --> CodeFiles
+    QA --> TestFiles
+    Orchestrator --> Logs
+```
+
+### The 7-Agent Core: Deep Dive
+
+1. **Intake Agent**: Transforms raw NL into a machine-readable `StructuredSpecification`. Identifies missing constraints and edge cases early.
+2. **Architect Agent**: Designs the filesystem layout, database schemas, and API contracts. Establishes the technical blueprint.
+3. **Planner Agent**: Decomposes the architectural blueprint into atomic `AtomicTask` objects. Uses topological sorting to map out dependencies.
+4. **QA Agent**: Generates a comprehensive `pytest` suite for each task *before* coding starts, establishing behavioral contracts.
+5. **Coder Agent**: Implements the production code designed to specifically pass the QA Agent's tests. Modifies files directly via Sandboxed tools.
+6. **Recovery Agent**: The "Self-Healer". Diagnoses test failures, syntax errors, and runtime crashes. Formulates a plan to get back on track.
+7. **Security Agent**: Conducts a full audit of the generated code for security vulnerabilities using static analysis patterns.
 
 ---
 
-## 7. Workflow — The 16-State FSM
+## 7. Workflow & Orchestration
 
 ForgeAI is governed by a strict **Finite State Machine (FSM)**. This ensures that the system never skips critical phases like testing or architectural review.
+
+### The 16-State FSM Loop
 
 ```mermaid
 stateDiagram-v2
@@ -238,48 +286,144 @@ stateDiagram-v2
     SUMMARY --> [*]
 ```
 
+### The TDD Execution Loop
+
+ForgeAI operates on a strict Test-Driven Development (TDD) methodology. No production code is written without a failing test. This behavioral enforcement guarantees output quality.
+
+```mermaid
+sequenceDiagram
+    participant O as Orchestrator
+    participant Q as QA Agent
+    participant C as Coder Agent
+    participant S as Sandboxed File System
+    participant R as Recovery Agent
+
+    O->>Q: Request Tests for Task
+    Q->>S: Write pytest cases (tests_*.py)
+    S-->>O: Tests created
+    O->>S: Run tests
+    S-->>O: Tests failed (Expected behavioral baseline)
+    O->>C: Request Production Code
+    C->>S: Write implementation
+    S-->>O: Code written
+    O->>S: Run tests
+    alt Tests Pass
+        S-->>O: Success (Green)
+        O->>O: Proceed to Next Task
+    else Tests Fail
+        S-->>O: Error logs (Red)
+        O->>R: Trigger Recovery Cascade
+        R->>C: Provide localized fix instructions
+        C->>S: Apply fix
+    end
+```
+
+### The Autonomous Recovery Cascade
+
+When a task fails, ForgeAI doesn't simply crash or give up. It attempts a structured, 4-tier recovery cascade to autonomously heal the codebase.
+
+```mermaid
+stateDiagram-v2
+    [*] --> FailureDetected
+    FailureDetected --> Tier1: Analyze Error Trace
+    
+    state Tier1 {
+        [*] --> RETRY_WITH_FIX
+        RETRY_WITH_FIX --> FixSyntaxError
+        RETRY_WITH_FIX --> FixImportPath
+    }
+    
+    Tier1 --> Success: Tests Pass
+    Tier1 --> Tier2: Retries Exhausted (max 3)
+    
+    state Tier2 {
+        [*] --> MODIFY_APPROACH
+        MODIFY_APPROACH --> AlternateArchitecture
+        MODIFY_APPROACH --> FallbackLibrary
+    }
+    
+    Tier2 --> Success: Tests Pass
+    Tier2 --> Tier3: Approach Failed
+    
+    state Tier3 {
+        [*] --> SKIP_TASK
+        SKIP_TASK --> EvaluateDependencies
+    }
+    
+    Tier3 --> NextTask: Task is Independent
+    Tier3 --> Tier4: Task is Critical Block
+    
+    state Tier4 {
+        [*] --> ESCALATE
+        ESCALATE --> PausePipeline
+        PausePipeline --> HumanIntervention
+    }
+    
+    Tier4 --> [*]: Manual Fix Applied
+    Success --> [*]: Return to Normal Execution
+```
+
 ---
 
-## 8. Tech Stack
+## 8. Data Flow & State Management
 
-- **LLM**: Google Gemini 2.5 Flash (optimized for speed and 1M context).
-- **Runtime**: Python 3.11+.
-- **Validation**: Pydantic v2 (for strict data contracts between agents).
-- **Interface**: Gradio (Web UI) and Rich (CLI).
-- **Infrastructure**: Docker for sandboxed project generation.
-- **Testing**: Pytest (Automated test runner).
+ForgeAI relies on a rigorously typed Pydantic data pipeline. Information transforms sequentially, enriching context at every step.
 
----
+```mermaid
+graph LR
+    A(User Spec String) -->|Intake Agent| B[StructuredSpecification]
+    B -->|Architect Agent| C[ProjectArchitecture]
+    C -->|Planner Agent| D[ImplementationPlan]
+    D -->|Orchestrator| E[Task Queue]
+    E -->|QA Agent| F[Test Scripts]
+    F -->|Coder Agent| G[Production Code]
+    G -->|Security Agent| H[Security Audit Report]
+```
 
-## 9. AI Deep Dive — Gemini 2.5 Flash
-
-We chose **Gemini 2.5 Flash** because it is the only model that solves the **"Context Ceiling"** problem.
-- **1M Context**: We can fit the *entire* SDLC history in a single prompt. This allows the model to remember an architectural decision made at the start while implement the final feature.
-- **Native JSON Support**: Eliminates parsing errors that plague other agentic frameworks.
-- **Flash Inference**: Sub-second response times are critical for multi-agent loops where latency accumulates.
-
----
-
-## 10. Impact
-
-ForgeAI transforms the economics of software development:
-- **Time Savings**: Reduce 40 hours of manual scaffolding and wiring to **4 minutes**.
-- **Quality Assurance**: 100% test coverage is enforced by the system, not left to dev discretion.
-- **Security by Default**: Every project is audited by an AI security expert before delivery.
-- **Accessibility**: Allows founders and product managers to build high-fidelity MVPs without a large engineering team.
+This strict progression ensures that downstream agents never receive hallucinatory or malformed context. 
 
 ---
 
-## 11. Real-World Use Cases
+## 9. Tech Stack
 
-- **Startup MVPs**: Generate full-stack REST APIs with authentication and database integration in minutes.
-- **API Wrappers**: Build bridges between complex 3rd party services autonomously.
-- **Data Pipelines**: Generate ETL scripts and validation logic with built-in tests.
-- **Internal Tools**: Rapidly spin up specialized internal dashboards and automation scripts.
+- **LLM Engine**: Google Gemini 2.5 Flash (optimized for speed and 1M context processing).
+- **Core Runtime**: Python 3.11+.
+- **Data Validation**: Pydantic v2 (for strict data contracts between agents and schema enforcement).
+- **Interfaces**: Gradio (Web UI) and Rich (CLI).
+- **Isolation/Infrastructure**: Docker for sandboxed project generation and dependency control.
+- **Testing Framework**: Pytest (Automated test runner and assertion evaluation).
 
 ---
 
-## 12. Comparison
+## 10. AI Deep Dive — Gemini 2.5 Flash
+
+We chose **Gemini 2.5 Flash** because it is the only model that efficiently solves the **"Context Ceiling"** problem inherent in complex software development.
+- **1M Token Context**: We can fit the *entire* Software Development Life Cycle (SDLC) history in a single prompt. This allows the model to remember an architectural decision made at the start while implementing the final feature, eliminating logical inconsistencies.
+- **Native JSON Support**: Eliminates prompt-injection and parsing errors that heavily plague other agentic frameworks relying on markdown blocks.
+- **Flash Inference Latency**: Sub-second response times are absolutely critical for multi-agent loops where latency dynamically accumulates over hundreds of LLM calls.
+
+---
+
+## 11. Impact
+
+ForgeAI transforms the fundamental economics of software development:
+- **Massive Time Savings**: Reduce 40 hours of manual scaffolding, environment wiring, and basic feature development to **under 4 minutes**.
+- **Quality Assurance as a Guarantee**: 100% functional test coverage is enforced strictly by the system—it is a gate, not left to developer discretion.
+- **Security by Default**: Every project is autonomously audited by an AI security expert prior to delivery.
+- **Democratized Access**: Allows founders, business analysts, and product managers to build high-fidelity MVPs and validate ideas without an expensive engineering team.
+
+---
+
+## 12. Real-World Use Cases
+
+- **Startup MVPs**: Generate full-stack REST APIs complete with authentication, RBAC, and database integration in a matter of minutes.
+- **API Wrappers & Aggregators**: Build resilient bridges between complex, fragmented 3rd party web services autonomously.
+- **Data Engineering Pipelines**: Generate complex ETL (Extract, Transform, Load) scripts and robust validation logic with built-in tests and error logging.
+- **Internal Tools & Dashboards**: Rapidly spin up specialized internal automation scripts and CRUD interfaces.
+
+---
+
+## 13. Comparison
 
 | Feature | Github Copilot | Cursor | **ForgeAI** |
 | :--- | :--- | :--- | :--- |
@@ -291,101 +435,109 @@ ForgeAI transforms the economics of software development:
 
 ---
 
-## 13. Scalability
+## 14. Scalability
 
-ForgeAI's modular agent design means it grows with your needs:
-- **Horizontal Agent Scaling**: Add specialized agents for Frontend, DevOps, or Performance without touching the core Orchestrator.
-- **Multi-Language Support**: The TDD loop and Orchestration logic are language-agnostic.
-- **Enterprise Integration**: Can be integrated into CI/CD pipelines to autonomously fix PRs and security issues.
-
----
-
-## 14. Responsible AI and Ethics
-
-We adhere to strict ethical standards in autonomous development:
-- **Safety Guardrails**: Block dangerous commands (e.g., `rm -rf`) at the shell level.
-- **Transparency**: Every decision is logged and attributed to a specific agent role.
-- **Data Privacy**: No data is stored or used for training; Gemini API operates under enterprise privacy standards.
-- **Human Agency**: Checkpoints ensure that the AI remains a tool under human control, not an unsupervised generator.
+ForgeAI's modular agent architecture ensures it grows proportionally with your engineering needs:
+- **Horizontal Agent Scaling**: Easily add specialized agents for Frontend UI, DevOps/Terraform, or Performance optimization without altering the core Orchestrator state logic.
+- **Multi-Language Support**: The fundamental TDD loop, context management, and Orchestration logic are inherently language-agnostic.
+- **Enterprise Integration**: Capable of being deeply integrated into existing CI/CD pipelines to autonomously review PRs, patch security issues, or migrate deprecated APIs.
 
 ---
 
-## 15. Evaluation Criteria Alignment
+## 15. Responsible AI and Ethics
 
-ForgeAI maps directly to the **Itanta Hackathon 2026** judging criteria:
-- **Innovation**: First-of-its-kind autonomous TDD recovery loop.
-- **Technical Excellence**: Robust FSM orchestration and Pydantic-driven data safety.
-- **Completeness**: A true end-to-end factory from spec to secure, tested code.
-- **User Experience**: Premium Gradio UI and detailed CLI feedback.
-
----
-
-## 16. Trade-offs
-
-- **LLM Cost**: End-to-end autonomy requires more tokens than simple autocomplete.
-- **Latency**: The TDD loop ensures quality but takes longer than "one-shot" generation.
-- **Non-determinism**: As with all LLMs, architectural styles may vary slightly between runs (mitigated by seed control).
+We adhere to strict ethical guidelines and practical safety measures in autonomous development:
+- **Execution Guardrails**: Dangerous commands (e.g., `rm -rf`, network flooding) are structurally blocked at the shell/execution layer.
+- **Decision Transparency**: Every AI decision is logged persistently and visibly attributed to a specific agent role for auditing.
+- **Data Privacy**: No project data is stored or repurposed for auxiliary training. The Gemini API inherently operates under strict enterprise privacy standards.
+- **Human Agency Maintained**: Checkpoints ensure that the AI operates as an advanced tool firmly under human oversight, not as a rogue or unsupervised generator.
 
 ---
 
-## 17. Project Complexity Tiers
+## 16. Evaluation Criteria Alignment
 
-ForgeAI supports the hackathon's tier system:
-- **Tier 1-2**: Simple models and CLI tools.
-- **Tier 3-4**: Complex APIs with Auth, RBAC, and External Integrations.
-- **Tier 5**: Distributed systems with MongoDB change streams and joins.
+ForgeAI maps perfectly to the **Itanta Hackathon 2026** core judging criteria:
+- **Innovation (30%)**: Pioneering a first-of-its-kind autonomous TDD self-healing recovery loop.
+- **Technical Excellence (30%)**: Extremely robust FSM orchestration backed by strict Pydantic-driven data safety guarantees.
+- **Completeness (20%)**: A genuine end-to-end factory producing secure, tested, working code—not just a prototype.
+- **User Experience (20%)**: Premium, intuitive Gradio Web UI supplemented by exceptionally detailed CLI feedback traces.
 
 ---
 
-## 18. Installation & Setup
+## 17. Trade-offs
+
+- **Elevated LLM API Cost**: End-to-end, multi-agent autonomy fundamentally requires substantially more token consumption than localized, one-shot autocomplete tools.
+- **Execution Latency**: The rigorous TDD loop guarantees quality but requires more time (minutes instead of seconds) to deliver output compared to blind code generation.
+- **Inherent Non-determinism**: As is common with probabilistic LLMs, the specific architectural styles or variable naming conventions may vary slightly across runs (though this is mitigated by strict temperature and seed control).
+
+---
+
+## 18. Project Complexity Tiers
+
+ForgeAI is designed to robustly handle varying tiers of software complexity:
+- **Tier 1-2**: Simple data models, shell scripts, and local CLI tools.
+- **Tier 3-4**: Medium-complexity REST APIs featuring JWT Authentication, Role-Based Access Control, and External API Integrations.
+- **Tier 5**: Complex distributed systems encompassing components like MongoDB change streams, message queues, and complex SQL joins.
+
+---
+
+## 19. Installation & Setup
 
 ```bash
 # Clone the repository
 git clone https://github.com/itanta/forgeai.git
 
-# Install dependencies
-pip install -r forgeai/requirements.txt
+# Navigate into directory
+cd forgeai
 
-# Configure environment
+# Install Python dependencies
+pip install -r requirements.txt
+
+# Configure environment variables
 cp .env.example .env
-# Add your GOOGLE_API_KEY
+# Edit .env and securely add your GOOGLE_API_KEY
 
-# Launch
+# Launch the interactive web interface
 python app.py
+
+# Alternatively, run via CLI for CI/CD environments
+python -m forgeai.main --spec "Create a simple URL shortener API with Redis caching"
 ```
 
 ---
 
-## 19. Why This Will Win
+## 20. Why This Will Win
 
-ForgeAI is the only entry that treats LLMs as an **Industrial Component** rather than a chatbot. By wrapping the intelligence of Gemini in a strict engineering framework (TDD + FSM + Security Audit), we've solved the reliability gap that holds back AI-driven development. It's not just "cool code"—it's a **working system**.
+ForgeAI is fundamentally distinct. It is the only entry that treats LLMs not as a conversational chatbot or a glorified text predictor, but as an **Industrial Engineering Component**. By constraining the raw, chaotic intelligence of Gemini within a rigid, battle-tested engineering framework (TDD + Validated FSM + Mandatory Security Audits), we've bridged the critical reliability gap that historically holds back AI-driven autonomous development. 
 
----
-
-## 20. Future Scope
-
-- **Frontend Agent**: Automated React/Tailwind component generation.
-- **Deployment Agent**: One-click deployment to AWS, GCP, or Vercel.
-- **PR Agent**: Integrate directly with GitHub to autonomously review and fix issues.
+It's not just a cool demo—it's a **working software factory**.
 
 ---
 
-## 21. FAQ
+## 21. Future Scope
+
+- **Frontend Agent Integration**: Automated React/Tailwind/Vue component generation seamlessly linked to the generated backend API.
+- **Autonomous Deployment Agent**: One-click, zero-config deployment to major cloud providers (AWS, GCP, or Vercel) including Docker container orchestration.
+- **GitHub PR Agent**: Integrate directly with GitHub webhooks to autonomously review incoming code, suggest fixes, and commit verified patches.
+
+---
+
+## 22. FAQ
 
 **Q: Does it only work with Python?**
-A: Currently yes, but the architecture is language-agnostic.
+A: Currently yes (generating Python), but the core orchestration architecture and FSM are language-agnostic. We plan to add Node.js and Go next.
 
-**Q: How do I know the code is secure?**
-A: Every run includes a mandatory post-completion security audit by our Security Agent.
+**Q: How do I definitively know the generated code is secure?**
+A: Every completed project run includes a mandatory post-completion vulnerability audit conducted by our Security Agent, which specifically scans for OWASP Top 10 vulnerabilities.
 
-**Q: Can I stop it midway?**
-A: Yes, use the human-in-the-loop checkpoints to pause or abort at any time.
+**Q: Can I stop or modify it midway through execution?**
+A: Yes, use the built-in human-in-the-loop checkpoints to pause, review the plan, modify the architecture, or abort entirely at any time.
 
 ---
 
-## 22. Lessons Learned
+## 23. Lessons Learned
 
-Building ForgeAI taught us that **constraint is the key to creativity**. By forcing agents into a strict FSM and requiring failing tests before code, we actually enabled the LLM to be *more* creative and accurate within those bounds.
+Building ForgeAI revealed a counterintuitive truth about Multi-Agent Systems: **constraint is the ultimate key to creativity**. By forcing specialized agents into a rigid FSM and mandating failing tests before any logic is written, we eliminated AI hallucination. It turns out that providing strict behavioral bounds allows the LLM to be significantly *more* creative and mathematically accurate within those bounds. 
 
 ---
 <div align="center">
