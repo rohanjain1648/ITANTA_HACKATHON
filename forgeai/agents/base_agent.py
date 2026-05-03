@@ -130,13 +130,15 @@ class BaseAgent(ABC):
             system_prompt = self.build_system_prompt()
             user_prompt = self.build_user_prompt(context)
 
+            if self.logger:
+                self.logger.agent(self.role.value,
+                    f"Calling LLM with {len(user_prompt)} char prompt")
+
             raw_json = self.llm.generate_json(
                 prompt=user_prompt,
                 system_instruction=system_prompt,
             )
 
-            # Pass the parsed JSON as a string for parse_response
-            import json
             result = self.parse_response(json.dumps(raw_json), context)
             result.role = self.role
             result.duration_seconds = time.time() - start_time
@@ -144,7 +146,8 @@ class BaseAgent(ABC):
 
             if self.logger:
                 status = "SUCCESS" if result.success else "FAILED"
-                self.logger.agent(self.role.value, f"JSON execution: {status}")
+                self.logger.agent(self.role.value,
+                    f"Execution complete: {status} ({result.duration_seconds:.1f}s)")
 
             return result
 

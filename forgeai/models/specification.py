@@ -6,7 +6,7 @@ Produced by the Intake Agent after requirement clarification (FR-01, FR-02).
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class APIEndpoint(BaseModel):
@@ -52,6 +52,25 @@ class StructuredSpecification(BaseModel):
     # Architecture hints
     architecture_style: str = "monolith"  # monolith | microservice | layered
     directory_structure: dict = Field(default_factory=dict)
+
+    @field_validator(
+        "acceptance_criteria", "constraints",
+        "functional_requirements", "non_functional_requirements",
+        mode="before",
+    )
+    @classmethod
+    def _coerce_str_list(cls, v):
+        """Accept list-of-dicts from LLMs that add id/description structure."""
+        if not isinstance(v, list):
+            return v
+        result = []
+        for item in v:
+            if isinstance(item, dict):
+                result.append(item.get("description") or item.get("text")
+                               or item.get("requirement") or str(item))
+            else:
+                result.append(item)
+        return result
 
     # Metadata
     created_at: datetime = Field(default_factory=datetime.now)

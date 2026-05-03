@@ -76,12 +76,15 @@ class ArchitectAgent(BaseAgent):
             f'  "configuration": {{"approach": "env_variables", "files": [".env", "config.py"]}},\n'
             f'  "error_handling": "Description of error handling strategy"\n'
             f'}}\n\n'
-            f"IMPORTANT: Respond ONLY with valid JSON. Be thorough and production-quality."
+            f"IMPORTANT: Respond ONLY with valid JSON. Keep descriptions and structures concise. Do NOT truncate the output."
         )
 
     def parse_response(self, raw_response: str, context: AgentContext) -> AgentResult:
         data = self._parse_json_safe(raw_response)
         if data is None:
+            print("=== RAW RESPONSE ===")
+            print(raw_response)
+            print("====================")
             return AgentResult(
                 success=False,
                 role=self.role,

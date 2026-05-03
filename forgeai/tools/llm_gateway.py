@@ -108,39 +108,91 @@ class LLMGateway:
         )
         return response.text
 
-    def generate_json(self, prompt: str, system_instruction: str = "",
-                      max_retries: int = 3) -> dict:
-        """Generate a response and parse it as JSON.
-        
-        Automatically wraps the prompt to request JSON output and 
-        handles extraction from markdown code blocks.
-        """
-        json_prompt = (
-            f"{prompt}\n\n"
-            "IMPORTANT: Respond ONLY with valid JSON. No markdown, no explanation, "
-            "no code blocks. Just the raw JSON object."
+    def _call_gemini_json(self, prompt: str, system_instruction: str, temperature: float) -> str:
+        """Call Gemini with response_mime_type=application/json for guaranteed JSON output."""
+        config = genai_types.GenerateContentConfig(
+            temperature=temperature,
+            max_output_tokens=self.max_tokens,
+            system_instruction=system_instruction if system_instruction else None,
+            response_mime_type="application/json",
         )
 
+        response = self._client.models.generate_content(
+            model=self.model,
+            contents=prompt,
+            config=config,
+        )
+        return response.text
+
+    @staticmethod
+    def _parse_retry_delay(error: Exception) -> float:
+        """Extract retryDelay seconds from a Gemini 429 error, or return 0."""
+        import re
+        msg = str(error)
+        m = re.search(r"retryDelay.*?(\d+)s", msg)
+        if m:
+            return float(m.group(1))
+        return 0.0
+
+    def generate_json(self, prompt: str, system_instruction: str = "",
+                      max_retries: int = 5) -> dict:
+        """Generate a response and parse it as JSON.
+
+        Uses Gemini's native JSON mode (response_mime_type=application/json) so the
+        model is constrained to emit valid JSON without prose or markdown fences.
+        Respects Gemini's retryDelay on 429 errors and applies exponential backoff.
+        """
+        raw = ""
         for attempt in range(max_retries):
             try:
-                raw = self.generate(json_prompt, system_instruction, max_retries=1)
-                # Clean response — strip markdown code fences if present
-                cleaned = raw.strip()
-                if cleaned.startswith("```"):
-                    # Remove ```json and trailing ```
-                    lines = cleaned.split("\n")
-                    if lines[0].startswith("```"):
-                        lines = lines[1:]
-                    if lines and lines[-1].strip() == "```":
-                        lines = lines[:-1]
-                    cleaned = "\n".join(lines)
+                if self.logger:
+                    self.logger.api_call("LLMGateway",
+                        f"JSON API call #{self.total_api_calls + 1} (attempt {attempt + 1})", {})
 
-                return json.loads(cleaned)
+                raw = self._call_gemini_json(prompt, system_instruction, self.temperature)
+                self.total_api_calls += 1
+                est_tokens = (len(prompt) + len(raw)) // 4
+                self.total_tokens_used += est_tokens
+
+                if self.logger:
+                    self.logger.api_call("LLMGateway",
+                        f"Response received ({len(raw)} chars, ~{est_tokens} tokens)")
+
+                return json.loads(raw)
+
             except json.JSONDecodeError as e:
                 if self.logger:
                     self.logger.warn("LLMGateway", f"JSON parse failed (attempt {attempt + 1}): {str(e)}")
+                start = raw.find("{")
+                end = raw.rfind("}") + 1
+                if start != -1 and end > start:
+                    try:
+                        return json.loads(raw[start:end])
+                    except json.JSONDecodeError:
+                        pass
                 if attempt >= max_retries - 1:
                     raise
+
+            except Exception as e:
+                err_str = str(e)
+                is_rate_limit = "429" in err_str or "RESOURCE_EXHAUSTED" in err_str
+                if self.logger:
+                    self.logger.error("LLMGateway",
+                        f"JSON call failed (attempt {attempt + 1}): {err_str[:200]}")
+
+                if attempt >= max_retries - 1:
+                    raise RuntimeError(f"JSON generation failed after {max_retries} attempts: {err_str}")
+
+                if is_rate_limit:
+                    # Respect the API's suggested retry delay, then add backoff
+                    suggested = self._parse_retry_delay(e)
+                    wait = max(suggested, 2 ** (attempt + 1))
+                    if self.logger:
+                        self.logger.api_call("LLMGateway",
+                            f"Rate limited — waiting {wait:.0f}s before retry")
+                    time.sleep(wait)
+                else:
+                    time.sleep(2 ** (attempt + 1))
 
     def get_stats(self) -> dict:
         """Return usage statistics."""

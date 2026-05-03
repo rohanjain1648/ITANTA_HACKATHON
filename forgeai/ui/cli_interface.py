@@ -4,20 +4,15 @@ Provides animated panels, real-time log streaming, and interactive
 checkpoints for a premium developer experience.
 """
 
-import sys
-import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
-from rich.console import Console, Group
-from rich.live import Live
+from rich.console import Console
 from rich.panel import Panel
-from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
 from rich.prompt import Prompt, Confirm
 from rich.syntax import Syntax
 from rich.table import Table
 from rich.text import Text
 from rich.layout import Layout
-from rich.logging import RichHandler
 
 from forgeai.models.workflow_state import WorkflowPhase
 from forgeai.models.task import AtomicTask, TaskStatus
@@ -26,7 +21,7 @@ class CLIInterface:
     """Rich CLI for interacting with the ForgeAI framework."""
 
     def __init__(self):
-        self.console = Console()
+        self.console = Console(force_terminal=True, legacy_windows=False)
         self.layout = Layout()
         self.current_phase = WorkflowPhase.IDLE
         self.log_entries = []
@@ -41,7 +36,7 @@ class CLIInterface:
 
     def show_phase_change(self, phase: WorkflowPhase):
         self.current_phase = phase
-        self.console.print(f"\n[bold cyan]▶ Transitioning to {phase.value.upper()}[/bold cyan]")
+        self.console.print(f"\n[bold cyan]>> Transitioning to {phase.value.upper()}[/bold cyan]")
 
     def ask_questions(self, questions: List[str]) -> Dict[str, str]:
         self.console.print("\n[bold yellow]The Intake Agent needs more information:[/bold yellow]")
@@ -52,7 +47,7 @@ class CLIInterface:
         return answers
 
     def request_checkpoint(self, title: str, content: str) -> bool:
-        self.console.print(f"\n[bold magenta]━━━━━━━━━ CHECKPOINT: {title} ━━━━━━━━━[/bold magenta]")
+        self.console.print(f"\n[bold magenta]--------- CHECKPOINT: {title} ---------[/bold magenta]")
         self.console.print(content)
         return Confirm.ask("[bold yellow]Do you approve this step to proceed?[/bold yellow]", default=True)
 
@@ -88,7 +83,7 @@ class CLIInterface:
         return Confirm.ask("[bold yellow]Apply these changes?[/bold yellow]", default=True)
 
     def show_summary(self, summary: Dict[str, Any]):
-        self.console.print("\n[bold green]━━━━━━━━━━━━━ PIPELINE SUMMARY ━━━━━━━━━━━━━[/bold green]")
+        self.console.print("\n[bold green]------------- PIPELINE SUMMARY -------------[/bold green]")
         table = Table(show_header=False, box=None)
         table.add_row("Status", f"[bold green]{summary['status']}[/bold green]")
         table.add_row("Tasks Completed", str(summary['tasks_completed']))

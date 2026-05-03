@@ -20,9 +20,10 @@ load_dotenv()
 @click.option("--spec", "-s", help="Natural language project specification", required=False)
 @click.option("--config", "-c", help="Path to YAML config file", default=None)
 @click.option("--web", "-w", is_flag=True, help="Launch the web dashboard")
-def main(spec: str, config: str, web: bool):
+@click.option("--auto", "-a", is_flag=True, help="Auto-answer clarification questions (no interactive prompts)")
+def main(spec: str, config: str, web: bool, auto: bool):
     """ForgeAI: Agentic Software Development Framework."""
-    
+
     # 1. Initialize Configuration
     try:
         cfg_manager = ConfigManager.get_instance(config)
@@ -38,25 +39,26 @@ def main(spec: str, config: str, web: bool):
     # 3. Launch Web Dashboard in background if requested
     if web or cfg_manager.web_dashboard.enabled:
         cli.console.print("[yellow]Web dashboard enabled. URL: http://127.0.0.1:8000[/yellow]")
-        # We would normally start the FastAPI server in a thread here
-        # or separate process. For simplicity in the demo, we focus on the core flow.
 
     # 4. Initialize Orchestrator
     orchestrator = Orchestrator(cfg_manager)
 
     # 5. Connect UI to Orchestrator
+    # When --spec is given on the CLI or --auto is set, skip interactive
+    # question/checkpoint callbacks so the pipeline runs fully headless.
+    headless = bool(spec) or auto or not sys.stdin.isatty()
     orchestrator.set_callbacks(
         on_phase_change=cli.show_phase_change,
-        on_checkpoint=cli.request_checkpoint,
-        on_question=cli.ask_questions,
+        on_checkpoint=None if headless else cli.request_checkpoint,
+        on_question=None if headless else cli.ask_questions,
         on_task_progress=cli.show_task_progress,
-        on_diff_review=cli.show_diff_review
+        on_diff_review=None if headless else cli.show_diff_review,
     )
 
     # 6. Get specification from user if not provided in CLI
     final_spec = spec
     if not final_spec:
-        final_spec = click.prompt("\n[bold cyan]What would you like to build?[/bold cyan]")
+        final_spec = click.prompt("\nWhat would you like to build?")
 
     # 7. Run Pipeline
     summary = orchestrator.run(final_spec)

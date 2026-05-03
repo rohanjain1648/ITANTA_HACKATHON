@@ -224,7 +224,7 @@ class Orchestrator:
             role=AgentRole.ARCHITECT,
             specification=spec,
         )
-        result = self.architect_agent.execute(context)
+        result = self.architect_agent.execute_json(context)
         self.state.total_api_calls += result.api_calls_made
 
         if result.success and result.architecture:
@@ -258,7 +258,7 @@ class Orchestrator:
             specification=spec,
             architecture=architecture,
         )
-        result = self.planner_agent.execute(context)
+        result = self.planner_agent.execute_json(context)
         self.state.total_api_calls += result.api_calls_made
 
         if result.success and result.implementation_plan:
@@ -343,7 +343,7 @@ class Orchestrator:
             project_dir=str(self.file_manager.project_dir),
             existing_files=existing_files,
         )
-        qa_result = self.qa_agent.execute(qa_context)
+        qa_result = self.qa_agent.execute_json(qa_context)
         self.state.total_api_calls += qa_result.api_calls_made
 
         if not qa_result.success:
@@ -385,7 +385,7 @@ class Orchestrator:
                 previous_attempts=prev_attempts,
                 retry_count=attempt,
             )
-            coder_result = self.coder_agent.execute(coder_context)
+            coder_result = self.coder_agent.execute_json(coder_context)
             self.state.total_api_calls += coder_result.api_calls_made
 
             if not coder_result.success:
@@ -442,7 +442,7 @@ class Orchestrator:
                         previous_attempts=task.error_log,
                         retry_count=attempt,
                     )
-                    recovery_result = self.recovery_agent.execute(recovery_context)
+                    recovery_result = self.recovery_agent.execute_json(recovery_context)
                     self.state.total_api_calls += recovery_result.api_calls_made
 
                     if recovery_result.success and recovery_result.architecture:

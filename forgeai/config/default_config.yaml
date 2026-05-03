@@ -7,7 +7,7 @@
 
 llm:
   provider: "google"               # google | openai | anthropic
-  model: "gemini-2.5-flash"
+  model: "gemini-2.5-flash-lite"
   temperature: 0.2
   max_tokens: 8192
   api_key_env: "GOOGLE_API_KEY"    # Environment variable name for API key
@@ -32,7 +32,7 @@ workflow:
     - "after_specification"
     - "after_architecture"
     - "after_plan"
-  auto_approve_checkpoints: false  # If true, skip human approval
+  auto_approve_checkpoints: true   # If true, skip human approval
 
 output:
   project_dir: "./generated_project"
